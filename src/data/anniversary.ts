@@ -20,3 +20,15 @@ export const achievements = [['01','ПЕРШИЙ РІК','Пройдено 365 �
 export const reasons = ['Бо поруч із тобою навіть звичайний день стає особливим.','Бо ти вмієш зробити будь-яке місце домом.','Бо твій сміх може перезапустити важкий день.','Бо нам найкраще, коли ми просто собою.','Бо майбутнє поруч із тобою трохи менше лякає.','Бо ти бачиш красу в деталях, які я б пропустив.','Бо ти — моя улюблена пригода і мій найспокійніший дім.','Бо я досі хочу розповідати тобі кожну дрібницю.']
 export const commits = [['2026-09-25','completed_year_01'],['2026-07-14','survived_another_adventure'],['2026-05-03','added_more_memories'],['2026-02-14','still_in_love'],['2025-09-25','marriage_initialized']]
 export const letter = `Анастасіє,\n\n[ТУТ БУДЕ МІЙ ОСОБИСТИЙ ЛИСТ]\n\nЗ нашою першою річницею.\n\nЯ люблю тебе.\n\n— Андрій`
+
+export type BlockKey = 'milestones' | 'places' | 'months' | 'achievements' | 'reasons' | 'terminal' | 'commits' | 'letter'
+export const defaultVisibleBlocks: Record<BlockKey, boolean> = {
+  milestones: true,
+  places: true,
+  months: true,
+  achievements: true,
+  reasons: true,
+  terminal: true,
+  commits: true,
+  letter: true
+}
