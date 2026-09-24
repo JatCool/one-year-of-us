@@ -32,3 +32,14 @@ export const defaultVisibleBlocks: Record<BlockKey, boolean> = {
   commits: true,
   letter: true
 }
+
+export type MusicConfig = {
+  url: string
+  startSeconds: number
+  endSeconds: number
+  loop: boolean
+  enabled?: boolean
+  title?: string
+}
+export const defaultMusic: MusicConfig = { url: '', startSeconds: 0, endSeconds: 0, loop: true, enabled: true, title: 'Наша особлива мелодія' }
+

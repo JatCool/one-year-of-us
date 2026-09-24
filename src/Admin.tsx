@@ -1,13 +1,13 @@
-import { ChangeEvent, useEffect, useState, type ReactNode } from 'react'
+import { ChangeEvent, useEffect, useRef, useState, type ReactNode } from 'react'
 import { supabase } from './lib/supabase'
 import * as defaults from './data/anniversary'
 
 type Milestone = typeof defaults.milestones[number]
 type Place = typeof defaults.places[number]
 type Memory = typeof defaults.months[number]
-type Content = { couple: typeof defaults.couple; milestones: Milestone[]; places: Place[]; months: Memory[]; achievements: string[][]; reasons: string[]; commits: string[][]; letter: string; visibleBlocks?: Record<string, boolean> }
-const initial: Content = { couple: defaults.couple, milestones: defaults.milestones, places: defaults.places, months: defaults.months, achievements: defaults.achievements, reasons: defaults.reasons, commits: defaults.commits, letter: defaults.letter, visibleBlocks: defaults.defaultVisibleBlocks }
-const sections = [['milestones','💍','Наша дорога'],['places','🗺️','Місця, які зберегли'],['months','📸','12 місяців (Спогади)'],['settings','⚙️','Налаштування'],['achievements','🏆','Досягнення'],['reasons','❤️','Причини'],['commits','💻','Git log'],['letter','💌','Лист']] as const
+type Content = { couple: typeof defaults.couple; milestones: Milestone[]; places: Place[]; months: Memory[]; achievements: string[][]; reasons: string[]; commits: string[][]; letter: string; visibleBlocks?: Record<string, boolean>; music?: defaults.MusicConfig }
+const initial: Content = { couple: defaults.couple, milestones: defaults.milestones, places: defaults.places, months: defaults.months, achievements: defaults.achievements, reasons: defaults.reasons, commits: defaults.commits, letter: defaults.letter, visibleBlocks: defaults.defaultVisibleBlocks, music: defaults.defaultMusic }
+const sections = [['milestones','💍','Наша дорога'],['places','🗺️','Місця, які зберегли'],['months','📸','12 місяців (Спогади)'],['settings','⚙️','Налаштування'],['achievements','🏆','Досягнення'],['reasons','💖','Причини'],['commits','💻','Git log'],['letter','💌','Лист'],['music','🎵','Музика']] as const
 const copy = <T,>(item: T): T => JSON.parse(JSON.stringify(item))
 
 export default function Admin() {
@@ -21,7 +21,7 @@ export default function Admin() {
     const current = { ...defaults.defaultVisibleBlocks, ...(content.visibleBlocks || {}) }
     const nextBlocks = { ...current, [key]: !current[key] }
     const next = { ...content, visibleBlocks: nextBlocks }
-    change(next)
+    setContent(next)
     if (supabase) {
       setStatus('Зберігаємо…')
       const { error } = await supabase.from('site_content').upsert({ id: 'main', content: next, updated_at: new Date().toISOString() })
@@ -49,6 +49,40 @@ export default function Admin() {
     const { error: saveError } = await supabase.from('site_content').upsert({ id: 'main', content: next, updated_at: new Date().toISOString() })
     setStatus(saveError ? `Помилка: ${saveError.message}` : 'Фото видалено ✓')
   }
+  const uploadAudio = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !supabase) return
+    setStatus('Завантажуємо аудіо…')
+    const ext = file.name.split('.').pop() || 'mp3'
+    const path = `audio-${crypto.randomUUID()}.${ext}`
+    const { error: uploadError } = await supabase.storage.from('anniversary-media').upload(path, file, {
+      contentType: file.type || 'audio/mpeg'
+    })
+    if (uploadError) return setStatus(`Помилка: ${uploadError.message}`)
+
+    const publicUrl = supabase.storage.from('anniversary-media').getPublicUrl(path).data.publicUrl
+    const currentMusic = content.music || defaults.defaultMusic
+    const nextMusic = {
+      ...currentMusic,
+      url: publicUrl,
+      title: currentMusic.title || file.name.replace(/\.[^/.]+$/, "")
+    }
+    const next = { ...content, music: nextMusic }
+    setContent(next)
+    setStatus('Зберігаємо аудіо…')
+    const { error: saveError } = await supabase.from('site_content').upsert({ id: 'main', content: next, updated_at: new Date().toISOString() })
+    setStatus(saveError ? `Помилка: ${saveError.message}` : 'Аудіо завантажено та збережено ✓')
+  }
+  const removeAudio = async () => {
+    if (!supabase) return
+    setStatus('Видаляємо аудіо…')
+    const currentMusic = content.music || defaults.defaultMusic
+    const nextMusic = { ...currentMusic, url: '' }
+    const next = { ...content, music: nextMusic }
+    setContent(next)
+    const { error: saveError } = await supabase.from('site_content').upsert({ id: 'main', content: next, updated_at: new Date().toISOString() })
+    setStatus(saveError ? `Помилка: ${saveError.message}` : 'Аудіо видалено ✓')
+  }
   const imagePicker = (current: string, assign: (url: string) => Content) => (
     <div className="image-picker-wrap">
       <label className="image-picker">
@@ -62,7 +96,7 @@ export default function Admin() {
   const visible = { ...defaults.defaultVisibleBlocks, ...(content.visibleBlocks || {}) }
   if (!supabase) return <main className="admin-login"><h1>CMS ще не підключена</h1><p>Додайте Supabase secrets у GitHub та перезапустіть deployment.</p></main>
   if (!session) return <main className="admin-login"><p className="eyebrow">ПРИВАТНИЙ РЕДАКТОР</p><h1>ВХІД ДО <em>ІСТОРІЇ.</em></h1><form onSubmit={async event => { event.preventDefault(); const { error } = await supabase!.auth.signInWithPassword({ email, password }); setStatus(error ? 'Не вдалося увійти. Перевірте пошту та пароль.' : '') }}><label>Електронна пошта<input type="email" value={email} onChange={e => setEmail(e.target.value)} required/></label><label>Пароль<input type="password" value={password} onChange={e => setPassword(e.target.value)} required/></label><button className="primary">УВІЙТИ</button>{status && <p className="form-error">{status}</p>}</form></main>
-  return <main className="admin-shell"><header className="admin-head"><div><p className="eyebrow">АНДРІЙ × АНАСТАСІЯ</p><h1>РЕДАКТОР <em>ІСТОРІЇ.</em></h1></div><button className="secondary" onClick={() => supabase!.auth.signOut()}>ВИЙТИ</button></header><nav className="admin-nav">{sections.map(([id, icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><i>{icon}</i><span>{label}</span>{id in visible && visible[id as defaults.BlockKey] === false && <em className="off-badge">вимкнено</em>}</button>)}</nav><section className="editor">{tab === 'milestones' && <Milestones content={content} change={change} imagePicker={imagePicker} enabled={visible.milestones !== false} toggle={() => toggleBlock('milestones')}/>} {tab === 'places' && <Places content={content} change={change} imagePicker={imagePicker} enabled={visible.places !== false} toggle={() => toggleBlock('places')}/>} {tab === 'months' && <Memories content={content} change={change} imagePicker={imagePicker} enabled={visible.months !== false} toggle={() => toggleBlock('months')}/>} {tab === 'settings' && <Settings content={content} change={change} visible={visible} toggle={toggleBlock}/>} {tab === 'letter' && <Letter content={content} change={change} enabled={visible.letter !== false} toggle={() => toggleBlock('letter')}/>} {tab === 'achievements' && <Achievements content={content} change={change} enabled={visible.achievements !== false} toggle={() => toggleBlock('achievements')}/>} {tab === 'reasons' && <Reasons content={content} change={change} enabled={visible.reasons !== false} toggle={() => toggleBlock('reasons')}/>} {tab === 'commits' && <Commits content={content} change={change} enabled={visible.commits !== false} toggle={() => toggleBlock('commits')}/>}<div className="savebar"><span>{status || 'Зміни зберігаються тільки після натискання кнопки'}</span><button className="primary" onClick={save}>ЗБЕРЕГТИ ЗМІНИ</button></div></section></main>
+  return <main className="admin-shell"><header className="admin-head"><div><p className="eyebrow">АНДРІЙ × АНАСТАСІЯ</p><h1>РЕДАКТОР <em>ІСТОРІЇ.</em></h1></div><button className="secondary" onClick={() => supabase!.auth.signOut()}>ВИЙТИ</button></header><nav className="admin-nav">{sections.map(([id, icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><i>{icon}</i><span>{label}</span>{id in visible && visible[id as defaults.BlockKey] === false && <em className="off-badge">вимкнено</em>}</button>)}</nav><section className="editor">{tab === 'milestones' && <Milestones content={content} change={change} imagePicker={imagePicker} enabled={visible.milestones !== false} toggle={() => toggleBlock('milestones')}/>} {tab === 'places' && <Places content={content} change={change} imagePicker={imagePicker} enabled={visible.places !== false} toggle={() => toggleBlock('places')}/>} {tab === 'months' && <Memories content={content} change={change} imagePicker={imagePicker} enabled={visible.months !== false} toggle={() => toggleBlock('months')}/>} {tab === 'settings' && <Settings content={content} change={change} visible={visible} toggle={toggleBlock}/>} {tab === 'letter' && <Letter content={content} change={change} enabled={visible.letter !== false} toggle={() => toggleBlock('letter')}/>} {tab === 'achievements' && <Achievements content={content} change={change} enabled={visible.achievements !== false} toggle={() => toggleBlock('achievements')}/>} {tab === 'reasons' && <Reasons content={content} change={change} enabled={visible.reasons !== false} toggle={() => toggleBlock('reasons')}/>} {tab === 'commits' && <Commits content={content} change={change} enabled={visible.commits !== false} toggle={() => toggleBlock('commits')}/>} {tab === 'music' && <MusicEditor content={content} change={change} uploadAudio={uploadAudio} removeAudio={removeAudio} />}<div className="savebar"><span>{status || 'Зміни зберігаються тільки після натискання кнопки'}</span><button className="primary" onClick={save}>ЗБЕРЕГТИ ЗМІНИ</button></div></section></main>
 }
 
 type Props = { content: Content; change: (next: Content) => void }
@@ -368,3 +402,287 @@ function CollectionHeader({ title, description, add, children }: { title: string
     </>
   )
 }
+
+function MusicEditor({
+  content,
+  change,
+  uploadAudio,
+  removeAudio
+}: Props & {
+  uploadAudio: (event: ChangeEvent<HTMLInputElement>) => Promise<void>
+  removeAudio: () => Promise<void>
+}) {
+  const music = content.music || defaults.defaultMusic
+  const isEnabled = music.enabled !== false
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const toggleMusic = () => {
+    change({
+      ...content,
+      music: { ...music, enabled: !isEnabled }
+    })
+  }
+
+  const setMusicField = <K extends keyof defaults.MusicConfig>(key: K, val: defaults.MusicConfig[K]) => {
+    change({
+      ...content,
+      music: { ...music, [key]: val }
+    })
+  }
+
+  const startMin = Math.floor((music.startSeconds || 0) / 60)
+  const startSec = (music.startSeconds || 0) % 60
+  const endMin = Math.floor((music.endSeconds || 0) / 60)
+  const endSec = (music.endSeconds || 0) % 60
+
+  const handleStartMin = (min: number) => {
+    const total = Math.max(0, min * 60 + startSec)
+    setMusicField('startSeconds', total)
+  }
+  const handleStartSec = (sec: number) => {
+    const total = Math.max(0, startMin * 60 + Math.min(59, Math.max(0, sec)))
+    setMusicField('startSeconds', total)
+  }
+  const handleEndMin = (min: number) => {
+    const total = Math.max(0, min * 60 + endSec)
+    setMusicField('endSeconds', total)
+  }
+  const handleEndSec = (sec: number) => {
+    const total = Math.max(0, endMin * 60 + Math.min(59, Math.max(0, sec)))
+    setMusicField('endSeconds', total)
+  }
+
+  const formatMinSec = (totalSeconds: number) => {
+    const m = Math.floor(totalSeconds / 60)
+    const s = Math.floor(totalSeconds % 60)
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  }
+
+  const togglePlayTest = () => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (isPlaying) {
+      audio.pause()
+      setIsPlaying(false)
+    } else {
+      audio.currentTime = music.startSeconds || 0
+      audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false))
+    }
+  }
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    const onTimeUpdate = () => {
+      setCurrentTime(audio.currentTime)
+      if (music.endSeconds && music.endSeconds > music.startSeconds && audio.currentTime >= music.endSeconds) {
+        if (music.loop) {
+          audio.currentTime = music.startSeconds || 0
+          audio.play()
+        } else {
+          audio.pause()
+          audio.currentTime = music.startSeconds || 0
+          setIsPlaying(false)
+        }
+      }
+    }
+    const onEnded = () => {
+      if (music.loop) {
+        audio.currentTime = music.startSeconds || 0
+        audio.play()
+      } else {
+        setIsPlaying(false)
+      }
+    }
+    audio.addEventListener('timeupdate', onTimeUpdate)
+    audio.addEventListener('ended', onEnded)
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [music.startSeconds, music.endSeconds, music.loop])
+
+  return (
+    <>
+      <BlockToggleBar enabled={isEnabled} toggle={toggleMusic} label="Музика" />
+      <div className="collection-heading">
+        <div>
+          <h2>Фонова музика</h2>
+          <p>Додайте романтичну музику для сайту. Можна вказати з якої хвилини починати, на якій завершувати та зациклювати трек.</p>
+        </div>
+      </div>
+
+      <div className="music-editor-grid">
+        <article className="edit-card">
+          <div className="card-heading">
+            <b>1. Аудіофайл або посилання</b>
+          </div>
+          <div className="field-grid">
+            <label className="span-all">
+              Назва треку / пісні
+              <input
+                value={music.title || ''}
+                placeholder="Наприклад: Ed Sheeran — Perfect"
+                onChange={e => setMusicField('title', e.target.value)}
+              />
+            </label>
+
+            <div className="span-all audio-upload-box">
+              <label className="audio-upload-btn">
+                <span>📁 ЗАВАНТАЖИТИ АУДІОФАЙЛ (MP3 / WAV / M4A)</span>
+                <input type="file" accept="audio/*" onChange={uploadAudio} />
+              </label>
+              <div className="upload-divider"><span>АБО ВКАЖІТЬ ПРЯМЕ ПОСИЛАННЯ (URL)</span></div>
+              <label>
+                Пряме посилання на аудіо
+                <input
+                  type="url"
+                  placeholder="https://.../music.mp3"
+                  value={music.url || ''}
+                  onChange={e => setMusicField('url', e.target.value)}
+                />
+              </label>
+            </div>
+
+            {music.url && (
+              <div className="span-all audio-loaded-row">
+                <span className="audio-url-label">Файл підключено: <b>{music.url.split('/').pop()}</b></span>
+                <button type="button" className="danger" onClick={removeAudio}>ВИДАЛИТИ АУДІО</button>
+              </div>
+            )}
+          </div>
+        </article>
+
+        {music.url && (
+          <article className="edit-card">
+            <div className="card-heading">
+              <b>2. Інтервал відтворення та зациклення</b>
+            </div>
+
+            <div className="music-timing-grid">
+              <div className="timing-box">
+                <span className="timing-title">Початок треку</span>
+                <p className="timing-hint">З якої хвилини та секунди починати:</p>
+                <div className="time-inputs-row">
+                  <label>
+                    <span className="sub-label">Хвилини:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={startMin}
+                      onChange={e => handleStartMin(parseInt(e.target.value) || 0)}
+                    />
+                  </label>
+                  <span className="colon">:</span>
+                  <label>
+                    <span className="sub-label">Секунди:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={startSec}
+                      onChange={e => handleStartSec(parseInt(e.target.value) || 0)}
+                    />
+                  </label>
+                </div>
+                <div className="time-preview-badge">
+                  Початок: <b>{formatMinSec(music.startSeconds || 0)}</b> ({music.startSeconds || 0} сек)
+                </div>
+                {isPlaying && (
+                  <button
+                    type="button"
+                    className="secondary small-action-btn"
+                    onClick={() => {
+                      const cur = Math.floor(currentTime)
+                      setMusicField('startSeconds', cur)
+                    }}
+                  >
+                    Встановити поточний час ({formatMinSec(currentTime)}) як початок
+                  </button>
+                )}
+              </div>
+
+              <div className="timing-box">
+                <span className="timing-title">Кінець треку</span>
+                <p className="timing-hint">На якій хвилині зупиняти / зациклювати (00:00 = до кінця треку):</p>
+                <div className="time-inputs-row">
+                  <label>
+                    <span className="sub-label">Хвилини:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={endMin}
+                      onChange={e => handleEndMin(parseInt(e.target.value) || 0)}
+                    />
+                  </label>
+                  <span className="colon">:</span>
+                  <label>
+                    <span className="sub-label">Секунди:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={endSec}
+                      onChange={e => handleEndSec(parseInt(e.target.value) || 0)}
+                    />
+                  </label>
+                </div>
+                <div className="time-preview-badge">
+                  {music.endSeconds && music.endSeconds > 0
+                    ? <>Кінець: <b>{formatMinSec(music.endSeconds)}</b> ({music.endSeconds} сек)</>
+                    : <>Кінець: <b>До самого кінця треку</b></>}
+                </div>
+                {isPlaying && (
+                  <button
+                    type="button"
+                    className="secondary small-action-btn"
+                    onClick={() => {
+                      const cur = Math.ceil(currentTime)
+                      setMusicField('endSeconds', cur)
+                    }}
+                  >
+                    Встановити поточний час ({formatMinSec(currentTime)}) як кінець
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="loop-toggle-row">
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={music.loop}
+                  onChange={() => setMusicField('loop', !music.loop)}
+                />
+                <span className="slider" />
+                <span className="toggle-label-text">{music.loop ? 'ЗАЦИКЛЕНО 🔁' : 'БЕЗ ПОВТОРУ'}</span>
+              </label>
+              <div className="loop-desc">
+                <b>Зациклювати музику (повторювати по колу)</b>
+                <p>Коли музика дійде до кінця або вказаної хвилини, вона почне грати знову з обраного початку.</p>
+              </div>
+            </div>
+
+            <div className="music-player-preview">
+              <span className="preview-label">ПРОСЛУХАТИ НАЛАШТОВАНИЙ ФРАГМЕНТ:</span>
+              <audio ref={audioRef} src={music.url} preload="metadata" />
+              <div className="player-controls-row">
+                <button type="button" className="primary" onClick={togglePlayTest}>
+                  {isPlaying ? '⏸ ЗУПИНИТИ' : '▶ ПРОСЛУХАТИ ФРАГМЕНТ'}
+                </button>
+                <div className="player-status-info">
+                  <span>Поточний час: <b>{formatMinSec(currentTime)}</b></span>
+                  <span>Діапазон: <b>{formatMinSec(music.startSeconds || 0)} — {music.endSeconds > 0 ? formatMinSec(music.endSeconds) : 'кінець'}</b></span>
+                  <span>Повтор: <b>{music.loop ? 'Увімкнено 🔁' : 'Вимкнено'}</b></span>
+                </div>
+              </div>
+            </div>
+          </article>
+        )}
+      </div>
+    </>
+  )
+}
+
