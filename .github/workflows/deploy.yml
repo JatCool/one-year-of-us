@@ -1,15 +1,19 @@
-name: Deploy anniversary site
+name: Deploy to GitHub Pages
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: pages
   cancel-in-progress: true
+
 jobs:
   deploy:
     environment:
@@ -21,11 +25,30 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - run: npm test
+
+      # Project pages are served from /<repository-name>/, user/organization
+      # pages (<owner>.github.io) and custom domains from /. Set the repository
+      # variable VITE_BASE_PATH to override (e.g. "/" for a custom domain).
+      - name: Resolve base path
+        id: base
+        env:
+          OVERRIDE: ${{ vars.VITE_BASE_PATH }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          if [ -n "$OVERRIDE" ]; then base="$OVERRIDE"
+          elif [[ "$REPO" == *.github.io ]]; then base="/"
+          else base="/$REPO/"; fi
+          echo "Using base path: $base"
+          echo "path=$base" >> "$GITHUB_OUTPUT"
+
       - run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_BASE_PATH: /one-year-of-us/
+          VITE_BASE_PATH: ${{ steps.base.outputs.path }}
+
+      # GitHub Pages has no SPA rewrites: serve the app for unknown paths such as /admin.
       - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
